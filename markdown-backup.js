@@ -8,6 +8,7 @@
 // Be awesome to each other.
 //
 
+const crypto = require('crypto');
 const fs = require("fs");
 const path = require("path");
 const glob = require("glob");
@@ -42,26 +43,32 @@ Promise.all(
       }
     }
 
+    let sequence = Promise.resolve();
+    const seq = (fn) => (...args) => (sequence = sequence.then(() => fn(...args)));
+
     const transformed = await pReplace(
       content,
       /!\[[^\]]*\]\(([^)]*)\)/g,
-      async (match, url, ...rest) => {
+      seq(async (match, url, ...rest) => {
         if (!/^http/.test(url)) {
           // ignore local images
           return match;
         }
         console.log(`Downloading: ${url}`)
         const res = await fetch(url);
+        const urlFilename = url.split("/").pop().replace(/[^a-zA-Z0-9._-]/g, '_');
+        const urlHash = crypto.createHash('md5').update(url).digest('hex');
         const contentType = res.headers.get("content-type");
         const extension = contentType.split("/")[1];
-        const destImagePath = `${imagesDir}/${index}.${extension}`;
+        const destImagePath = `${imagesDir}/${index}.${urlFilename}.${urlHash}.${extension}`;
+        console.log(`Write to file ${destImagePath}`);
         const dest = fs.createWriteStream(destImagePath);
         await res.body.pipe(dest);
         await new Promise((res, rej) => {
           dest.on("finish", res);
         });
         return match.replace(url, `./${path.relative(fileDir, destImagePath)}`);
-      }
+      })
     );
     fs.writeFileSync(filePath, transformed, "utf8");
   })
